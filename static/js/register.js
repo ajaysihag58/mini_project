@@ -6,6 +6,7 @@ const RegisterPage = {
     canvasEl: null,
     descriptors: [],
     detecting: false,
+    capturing: false,
     detectionLoop: null,
 
     init() {
@@ -187,35 +188,46 @@ const RegisterPage = {
     },
 
     async captureFace() {
-        const detection = await FaceManager.detectSingleFace(this.videoEl);
+        // Prevent concurrent captures and exceeding 5 samples
+        if (this.capturing || this.descriptors.length >= 5) return;
+        this.capturing = true;
 
-        if (!detection) {
-            Toast.show('No face detected. Position your face clearly in the frame.', 'warning');
-            return;
-        }
+        try {
+            const detection = await FaceManager.detectSingleFace(this.videoEl);
 
-        this.descriptors.push(Array.from(detection.descriptor));
-        const count = this.descriptors.length;
-        document.getElementById('capture-count').textContent = count;
+            if (!detection) {
+                Toast.show('No face detected. Position your face clearly in the frame.', 'warning');
+                return;
+            }
 
-        // Update dots
-        const dot = document.getElementById(`dot-${count}`);
-        if (dot) dot.classList.add('filled');
+            // Double-check after async gap
+            if (this.descriptors.length >= 5) return;
 
-        if (count >= 3) {
-            document.getElementById('btn-register').disabled = false;
-        }
+            this.descriptors.push(Array.from(detection.descriptor));
+            const count = this.descriptors.length;
+            document.getElementById('capture-count').textContent = count;
 
-        // Flash animation
-        const container = document.getElementById('camera-container');
-        container.classList.add('flash');
-        setTimeout(() => container.classList.remove('flash'), 400);
+            // Update dots
+            const dot = document.getElementById(`dot-${count}`);
+            if (dot) dot.classList.add('filled');
 
-        Toast.show(`Face sample ${count}/5 captured!`, 'success');
+            if (count >= 3) {
+                document.getElementById('btn-register').disabled = false;
+            }
 
-        if (count >= 5) {
-            document.getElementById('btn-capture').disabled = true;
-            Toast.show('All 5 samples captured. Ready to register!', 'info');
+            // Flash animation
+            const container = document.getElementById('camera-container');
+            container.classList.add('flash');
+            setTimeout(() => container.classList.remove('flash'), 400);
+
+            Toast.show(`Face sample ${count}/5 captured!`, 'success');
+
+            if (count >= 5) {
+                document.getElementById('btn-capture').disabled = true;
+                Toast.show('All 5 samples captured. Ready to register!', 'info');
+            }
+        } finally {
+            this.capturing = false;
         }
     },
 

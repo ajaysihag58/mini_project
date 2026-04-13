@@ -14,6 +14,15 @@ from flask_cors import CORS
 
 app = Flask(__name__, static_folder='static', static_url_path='')
 CORS(app)
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16 MB max request size
+
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    """Return JSON for all unhandled errors instead of HTML."""
+    code = getattr(e, 'code', 500)
+    print(f"[ERROR] Unhandled exception: {e}")
+    return jsonify({'error': str(e)}), code
 
 DATABASE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'attendance.db')
 
@@ -88,32 +97,39 @@ def get_students():
 @app.route('/api/students', methods=['POST'])
 def add_student():
     """Register a new student with face descriptors."""
-    data = request.json
-    name = data.get('name')
-    roll_number = data.get('roll_number')
-    class_section = data.get('class_section')
-    face_descriptors = data.get('face_descriptors')
-
-    if not all([name, roll_number, class_section, face_descriptors]):
-        return jsonify({'error': 'All fields are required'}), 400
-
-    if len(face_descriptors) < 1:
-        return jsonify({'error': 'At least 1 face sample is required'}), 400
-
-    db = get_db()
     try:
-        db.execute(
-            'INSERT INTO students (name, roll_number, class_section, face_descriptors) VALUES (?, ?, ?, ?)',
-            (name, roll_number, class_section, json.dumps(face_descriptors))
-        )
-        db.commit()
-        student_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
-        db.close()
-        print(f"[OK] Student registered: {name} ({roll_number})")
-        return jsonify({'id': student_id, 'message': 'Student registered successfully'}), 201
-    except sqlite3.IntegrityError:
-        db.close()
-        return jsonify({'error': 'Roll number already exists'}), 409
+        data = request.json
+        if not data:
+            return jsonify({'error': 'Invalid request body'}), 400
+
+        name = data.get('name')
+        roll_number = data.get('roll_number')
+        class_section = data.get('class_section')
+        face_descriptors = data.get('face_descriptors')
+
+        if not all([name, roll_number, class_section, face_descriptors]):
+            return jsonify({'error': 'All fields are required'}), 400
+
+        if len(face_descriptors) < 1:
+            return jsonify({'error': 'At least 1 face sample is required'}), 400
+
+        db = get_db()
+        try:
+            db.execute(
+                'INSERT INTO students (name, roll_number, class_section, face_descriptors) VALUES (?, ?, ?, ?)',
+                (name, roll_number, class_section, json.dumps(face_descriptors))
+            )
+            db.commit()
+            student_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+            db.close()
+            print(f"[OK] Student registered: {name} ({roll_number})")
+            return jsonify({'id': student_id, 'message': 'Student registered successfully'}), 201
+        except sqlite3.IntegrityError:
+            db.close()
+            return jsonify({'error': 'Roll number already exists'}), 409
+    except Exception as e:
+        print(f"[ERROR] Registration failed: {e}")
+        return jsonify({'error': f'Registration failed: {str(e)}'}), 500
 
 
 @app.route('/api/students/<int:student_id>', methods=['DELETE'])
